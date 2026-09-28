@@ -107,7 +107,7 @@ $$
 During inference, a single sequential descent matches all valid suffix context orders $\ell \in [n_{\min}, n_{\max}]$ simultaneously in strictly **$\mathcal{O}(N)$ deterministic operations**, completely eliminating string slice allocations and hash-table churn.
 
 ### 2.2 Context Mixing & Dynamic Log-Scale Weighting
-Rather than executing hard decision trees, TTM blends observations across all valid context lengths $\ell \in \text{valid\_lengths}$. For each node along the matched reverse suffix path of length $\ell = |c|$, the unnormalized log-potential assigned to target candidate $y$ is defined as:
+Rather than executing hard decision trees, TTM blends observations across all active context lengths $\ell \in \mathcal{L}_{\text{valid}}$ (configured via `valid_lengths`). For each node along the matched reverse suffix path of length $\ell = |c|$, the unnormalized log-potential assigned to target candidate $y$ is defined as:
 
 $$
 \phi(y \mid c) = \ln \text{Count}(c \to y) + \Delta t(c) \cdot \ln \gamma + \ell \cdot \mathcal{B}(\mathcal{V})
@@ -115,21 +115,23 @@ $$
 
 Where:
 * $\text{Count}(c \to y)$ is the empirical transition frequency.
-* $\gamma \in (0, 1]$ is the temporal exponential forgetting rate.
-* $\Delta t(c) = t_{\text{current}} - t_{\text{last\_visit}}(c)$ is the elapsed timeline offset.
+* $\gamma \in (0, 1]$ is the temporal exponential forgetting rate (`decay`).
+* $\Delta t(c) = t_{\text{curr}} - t_{\text{last}}(c)$ is the elapsed timeline offset.
 * $\mathcal{B}(\mathcal{V})$ is the **Dynamic Vocabulary Entropy Base**:
 
 $$
 \mathcal{B}(\mathcal{V}) = \begin{cases} 
-\ln \max\left(2, |\mathcal{V}|\right), & \text{if } \text{alphabet\_autoscale} = \text{True} \\ 
+\ln \max\left(2, |\mathcal{V}|\right), & \text{if dynamic scaling is enabled} \\ 
 \ln 2 \approx 0.69315, & \text{otherwise} 
 \end{cases}
 $$
 
+*(configured via `alphabet_autoscale=True`).*
+
 This logarithmic scaling factor ensures that longer, more specific context matches exponentially dominate shorter, ambiguous fallbacks while gracefully preserving predictive mass.
 
 ### 2.3 Numerically Stable LogSumExp C-Level Normalization
-To prevent numerical underflow and precision collapse across disparate context lengths, log-potentials are accumulated via a pairwise LogSumExp reduction implemented directly in Cython over `libc.math` (using `c_log1p` and `c_exp`):
+To prevent numerical underflow and precision collapse across disparate context lengths, log-potentials are accumulated via a pairwise LogSumExp reduction implemented directly in Cython over `libc.math` (via `c_log1p` and `c_exp`):
 
 $$
 \text{LSE}(a, b) = \max(a, b) + \ln\left(1.0 + \exp\left(-|a - b|\right)\right)
@@ -189,7 +191,7 @@ To evaluate real-world sequential utility, TTM was benchmarked on an on-device *
 The model preserves preceding completed words as atomic history tokens while actively typed character prefixes are compressed via BPE and prefixed with a collision-free marker:
 
 $$
-\text{Context} = [w_{t-2},\, w_{t-1},\, \text{\_}c_0,\, \text{\_}c_1,\, \dots,\, \text{\_}c_k] \longrightarrow w_t
+\text{Context} = [w_{t-2},\, w_{t-1},\, c_0,\, c_1,\, \dots,\, c_k] \longrightarrow w_t
 $$
 
 High-speed keystroke querying is achieved by terminating linear probability scans early over pre-sorted log-logits (`return_log_scores=True`), dropping query latency from $\sim 46,000$ iterations to just **2–5 iterations per keystroke**.
@@ -365,17 +367,17 @@ global_server.merge(edge_client)
 
 | Parameter | Type | Default | Valid Range | Algorithmic Description |
 | :--- | :--- | :--- | :--- | :--- |
-| `max_depth` | `int` | `10` | $[1, \infty)$ | Maximum context horizon (Markov order) tracked in the Reverse Suffix Trie. |
-| `min_depth` | `int` | `1` | $[1, \text{max\_depth}]$ | Minimum context length required before activating associative transitions. |
-| `depth_list` | `Optional[List[int]]`| `None` | Subsets of $\mathbb{N}^+$ | Tracks sparse context horizons explicitly (e.g., `[2, 5, 8]`) without allocating intermediate nodes. |
-| `decay` | `Optional[float]` | `0.99` | $[0.0, 1.0]$ | Exponential forgetting coefficient ($\gamma$). Set to `1.0` or `None` to activate fast-path. |
+| `max_depth` | `int` | `10` | `[1, inf)` | Maximum context horizon (Markov order) tracked in the Reverse Suffix Trie. |
+| `min_depth` | `int` | `1` | `[1, max_depth]` | Minimum context length required before activating associative transitions. |
+| `depth_list` | `Optional[List[int]]`| `None` | Subsets of positive integers | Tracks sparse context horizons explicitly (e.g., `[2, 5, 8]`) without allocating intermediate nodes. |
+| `decay` | `Optional[float]` | `0.99` | `[0.0, 1.0]` | Exponential forgetting coefficient ($\gamma$). Set to `1.0` or `None` to activate fast-path. |
 | `alphabet_autoscale`| `bool` | `True` | `{True, False}` | Dynamically calibrates entropy scaling base: $\ln \max(2, |\mathcal{V}|)$. |
 | `fallback_mode` | `str` | `'katz_backoff'` | `{'katz_backoff', 'uniform'}` | Smoothing policy when encountering unobserved contexts. |
 | `pruning_mode` | `str` | `'fixed'` | `{'fixed', 'dynamic'}` | Garbage collection strategy: interval-based (`'fixed'`) vs. node density (`'dynamic'`). |
-| `pruning_step` | `int` | `1000` | $[1, \infty)$ | Step interval or target baseline for triggering tree sweeps. |
-| `pruning_threshold`| `float` | `1e-6` | $[0.0, \infty)$ | Minimum transition weight below which nodes/counts are physically purged. |
-| `max_beams` | `int` | `1000` | $[1, \infty)$ | Maximum queue iterations during masked beam search traversal. |
-| `cache_size` | `int` | `4096` | $[1, \infty)$ | Capacity limit for LRU power and integer logarithm math caches. |
+| `pruning_step` | `int` | `1000` | `[1, inf)` | Step interval or target baseline for triggering tree sweeps. |
+| `pruning_threshold`| `float` | `1e-6` | `[0.0, inf)` | Minimum transition weight below which nodes/counts are physically purged. |
+| `max_beams` | `int` | `1000` | `[1, inf)` | Maximum queue iterations during masked beam search traversal. |
+| `cache_size` | `int` | `4096` | `[1, inf)` | Capacity limit for LRU power and integer logarithm math caches. |
 
 ---
 
