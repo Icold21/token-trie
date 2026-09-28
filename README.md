@@ -14,6 +14,8 @@ Engineered for streaming sequential data, continuous edge learning, and high-fre
 
 ## 📑 Table of Contents
 1. [Mathematical Formulation & Problem Statement](#-1-mathematical-formulation--problem-statement)
+   * [1.1 Unsupervised Streaming Sequence Modeling](#11-unsupervised-streaming-sequence-modeling)
+   * [1.2 The Curse of Fixed-Order Markov Chains](#12-the-curse-of-fixed-order-markov-chains)
 2. [Core Architecture & Algorithmic Mechanics](#-2-core-architecture--algorithmic-mechanics)
    * [2.1 Reverse Suffix Trie Topology ($O(N)$ Traversal)](#21-reverse-suffix-trie-topology-on-traversal)
    * [2.2 Context Mixing & Dynamic Log-Scale Weighting](#22-context-mixing--dynamic-log-scale-weighting)
@@ -22,12 +24,16 @@ Engineered for streaming sequential data, continuous edge learning, and high-fre
    * [2.5 Katz-Style Unigram Smoothing Fallback](#25-katz-style-unigram-smoothing-fallback)
    * [2.6 Wildcard Context Masking via Bounded BFS](#26-wildcard-context-masking-via-bounded-bfs)
 3. [Architectural Comparison: TTM vs. Neural & Classical Baselines](#-3-architectural-comparison)
-4. [Empirical Benchmarks & Verification](#-4-empirical-benchmarks--verification)
+4. [Empirical Benchmarks & Scientific Validation](#-4-empirical-benchmarks--scientific-validation)
    * [4.1 Real-World Showcase: T9 Keystroke Autocomplete](#41-real-world-showcase-t9-mobile-keystroke-autocomplete)
-   * [4.2 Synthetic Stress Testing Suite](#42-synthetic-stress-testing-suite)
+   * [4.2 Synthetic Benchmark Suite](#42-synthetic-benchmark-suite)
    * [4.3 Hardware-Agnostic Micro-Profiling & Latency Dispersion](#43-hardware-agnostic-micro-profiling--latency-dispersion)
 5. [Installation & Build Requirements](#-5-installation--build-requirements)
 6. [API Quickstart & Production Patterns](#-6-api-quickstart--production-patterns)
+   * [6.1 Online Continuous Learning Loop](#61-online-continuous-learning-loop)
+   * [6.2 Advanced Generation Controls (LLM-Grade Sampling)](#62-advanced-generation-controls-llm-grade-sampling)
+   * [6.3 Surgical Memory Manipulation](#63-surgical-memory-manipulation)
+   * [6.4 Heterogeneous Asymmetric Federated Learning](#64-heterogeneous-asymmetric-federated-learning)
 7. [Comprehensive Configuration Guide](#-7-comprehensive-configuration-guide)
 8. [License & Citation](#-8-license--citation)
 
@@ -37,23 +43,41 @@ Engineered for streaming sequential data, continuous edge learning, and high-fre
 
 ### 1.1 Unsupervised Streaming Sequence Modeling
 Let $\mathcal{S} = (x_1, x_2, \dots, x_t, \dots)$ be an infinite non-stationary stochastic sequence of discrete categorical observations drawn from a dynamic alphabet:
-$$x_t \in \mathcal{V}_t \subset \{\text{str}, \text{int}\}, \quad |\mathcal{V}_t| < \infty$$
+
+$$
+x_t \in \mathcal{V}_t \subset \{\text{str}, \text{int}\}, \quad |\mathcal{V}_t| < \infty
+$$
 
 Under causal autoregressive constraints, the predictive objective is to estimate the next-token conditional probability distribution:
-$$P(x_t = y \mid \mathcal{H}_t), \quad \forall y \in \mathcal{V}_t$$
+
+$$
+P(x_t = y \mid \mathcal{H}_t), \quad \forall y \in \mathcal{V}_t
+$$
+
 conditioned strictly on the historical working memory:
-$$\mathcal{H}_t = (x_{t-k}, \dots, x_{t-2}, x_{t-1})$$
+
+$$
+\mathcal{H}_t = (x_{t-k}, \dots, x_{t-2}, x_{t-1})
+$$
+
 to minimize cumulative online logarithmic cross-entropy loss without offline retraining:
-$$\min \mathcal{L} = -\sum_{t=1}^T \log_2 P\left(x_t = y_t^* \mid \mathcal{H}_t\right)$$
+
+$$
+\min \mathcal{L} = -\sum_{t=1}^T \log_2 P\left(x_t = y_t^* \mid \mathcal{H}_t\right)
+$$
 
 ### 1.2 The Curse of Fixed-Order Markov Chains
 Classical $N$-gram Markov models parameterize transitions through stationary contingency matrices:
-$$P(x_t \mid x_{t-N+1}, \dots, x_{t-1})$$
+
+$$
+P(x_t \mid x_{t-N+1}, \dots, x_{t-1})
+$$
+
 * **High Bias ($N \le 2$):** Low-order chains are fundamentally blind to non-local temporal parity dependencies, failing on multi-symbol periodic trajectories and distant horizon tasks.
 * **Combinatorial Explosion ($N \ge 5$):** Full transition tables scale exponentially with state space complexity $\mathcal{O}(|\mathcal{V}|^N)$. In an alphabet of size $|\mathcal{V}| = 10^4$, a 4-gram table demands $10^{16}$ parameters, rendering dense representation intractable.
 * **Sample Sparsity:** In non-stationary environments, fixed-order contexts frequently encounter unobserved transitions, necessitating heuristic backoff cascades.
 
-**The Solution:** Variable Order Markov Models (VOMM) adaptively prune the context depth per-branch, allocating memory exclusively along observed trajectory paths and interpolating active horizons via **Context Mixing**.
+**The Solution:** Variable Order Markov Models (VOMM) adaptively prune context depth per-branch, allocating memory exclusively along observed trajectory paths and interpolating active horizons via **Context Mixing**.
 
 ---
 
@@ -75,30 +99,53 @@ $$P(x_t \mid x_{t-N+1}, \dots, x_{t-1})$$
 Conventional prefix trees store contexts chronologically ($x_{t-N} \to \dots \to x_{t-1}$). To query suffixes of varying lengths, a prefix tree requires $N$ separate traversals, yielding $\mathcal{O}(N^2)$ algorithmic complexity.
 
 TTM stores preceding tokens in **reverse chronological order**:
-$$\text{Path from Root} = (x_{t-1} \longrightarrow x_{t-2} \longrightarrow \dots \longrightarrow x_{t-k})$$
+
+$$
+\text{Path from Root} = (x_{t-1} \longrightarrow x_{t-2} \longrightarrow \dots \longrightarrow x_{t-k})
+$$
+
 During inference, a single sequential descent matches all valid suffix context orders $\ell \in [n_{\min}, n_{\max}]$ simultaneously in strictly **$\mathcal{O}(N)$ deterministic operations**, completely eliminating string slice allocations and hash-table churn.
 
 ### 2.2 Context Mixing & Dynamic Log-Scale Weighting
 Rather than executing hard decision trees, TTM blends observations across all valid context lengths $\ell \in \text{valid\_lengths}$. For each node along the matched reverse suffix path of length $\ell = |c|$, the unnormalized log-potential assigned to target candidate $y$ is defined as:
-$$\phi(y \mid c) = \ln \text{Count}(c \to y) + \Delta t(c) \cdot \ln \gamma + \ell \cdot \mathcal{B}(\mathcal{V})$$
+
+$$
+\phi(y \mid c) = \ln \text{Count}(c \to y) + \Delta t(c) \cdot \ln \gamma + \ell \cdot \mathcal{B}(\mathcal{V})
+$$
+
 Where:
 * $\text{Count}(c \to y)$ is the empirical transition frequency.
 * $\gamma \in (0, 1]$ is the temporal exponential forgetting rate.
 * $\Delta t(c) = t_{\text{current}} - t_{\text{last\_visit}}(c)$ is the elapsed timeline offset.
 * $\mathcal{B}(\mathcal{V})$ is the **Dynamic Vocabulary Entropy Base**:
-  $$\mathcal{B}(\mathcal{V}) = \begin{cases} \ln \max\left(2, |\mathcal{V}|\right), & \text{if } \texttt{alphabet\_autoscale}=\text{True} \\ \ln 2 \approx 0.69315, & \text{otherwise} \end{cases}$$
+
+$$
+\mathcal{B}(\mathcal{V}) = \begin{cases} 
+\ln \max\left(2, |\mathcal{V}|\right), & \text{if } \text{alphabet\_autoscale} = \text{True} \\ 
+\ln 2 \approx 0.69315, & \text{otherwise} 
+\end{cases}
+$$
 
 This logarithmic scaling factor ensures that longer, more specific context matches exponentially dominate shorter, ambiguous fallbacks while gracefully preserving predictive mass.
 
 ### 2.3 Numerically Stable LogSumExp C-Level Normalization
-To prevent numerical underflow and precision collapse across disparate context lengths, log-potentials are accumulated via a pairwise LogSumExp reduction implemented directly in Cython over `libc.math`:
-$$\text{LSE}(a, b) = \max(a, b) + \ln\left(1.0 + \exp\left(-|a - b|\right)\right) = \max(a, b) + \texttt{c\_log1p}\left(\texttt{c\_exp}\left(-|a - b|\right)\right)$$
+To prevent numerical underflow and precision collapse across disparate context lengths, log-potentials are accumulated via a pairwise LogSumExp reduction implemented directly in Cython over `libc.math` (using `c_log1p` and `c_exp`):
+
+$$
+\text{LSE}(a, b) = \max(a, b) + \ln\left(1.0 + \exp\left(-|a - b|\right)\right)
+$$
 
 The aggregate log-score for candidate token $y$ across all active context nodes $\mathcal{C}(\mathcal{H}_t)$ is:
-$$\mathcal{S}(y) = \bigoplus_{c \in \mathcal{C}(\mathcal{H}_t)} \phi(y \mid c)$$
+
+$$
+\mathcal{S}(y) = \bigoplus_{c \in \mathcal{C}(\mathcal{H}_t)} \phi(y \mid c)
+$$
 
 Normalized probability distributions under temperature scaling $\tau > 0$ are computed via shifted Softmax:
-$$P(y \mid \mathcal{H}_t) = \frac{\exp\left( \frac{\mathcal{S}(y) - \mathcal{S}_{\max}}{\tau} \right)}{\sum_{y' \in \mathcal{V}} \exp\left( \frac{\mathcal{S}(y') - \mathcal{S}_{\max}}{\tau} \right)}, \quad \mathcal{S}_{\max} = \max_{y} \mathcal{S}(y)$$
+
+$$
+P(y \mid \mathcal{H}_t) = \frac{\exp\left( \frac{\mathcal{S}(y) - \mathcal{S}_{\max}}{\tau} \right)}{\sum_{y' \in \mathcal{V}} \exp\left( \frac{\mathcal{S}(y') - \mathcal{S}_{\max}}{\tau} \right)}, \quad \mathcal{S}_{\max} = \max_{y} \mathcal{S}(y)
+$$
 
 ### 2.4 Lazy Exponential Timeline Decay & Fast Path
 In non-stationary streaming distributions, models with infinite static memory suffer from severe hysteresis. TTM implements **Lazy Exponential Decay**:
@@ -134,13 +181,16 @@ For environments with sensor noise, typos, or omitted tokens, TTM implements bre
 
 ---
 
-## 🔬 4. Empirical Benchmarks & Verification
+## 🔬 4. Empirical Benchmarks & Scientific Validation
 
 ### 4.1 Real-World Showcase: T9 Mobile Keystroke Autocomplete
 To evaluate real-world sequential utility, TTM was benchmarked on an on-device **T9 Mobile Autocomplete Engine** trained on clean literary prose (Tolstoy, Dostoevsky) utilizing subword BPE tokenization.
 
 The model preserves preceding completed words as atomic history tokens while actively typed character prefixes are compressed via BPE and prefixed with a collision-free marker:
-$$\text{Context} = [w_{t-2},\, w_{t-1},\, \text{\_c}_0,\, \text{\_c}_1,\, \dots,\, \text{\_c}_k] \longrightarrow w_t$$
+
+$$
+\text{Context} = [w_{t-2},\, w_{t-1},\, \text{\_}c_0,\, \text{\_}c_1,\, \dots,\, \text{\_}c_k] \longrightarrow w_t
+$$
 
 High-speed keystroke querying is achieved by terminating linear probability scans early over pre-sorted log-logits (`return_log_scores=True`), dropping query latency from $\sim 46,000$ iterations to just **2–5 iterations per keystroke**.
 
@@ -167,13 +217,20 @@ High-speed keystroke querying is achieved by terminating linear probability scan
 #### Evaluation Metrics Formulation:
 * **Top-$K$ Accuracy ($\text{Acc}@K$):** Percentage of keystrokes where target word $w_j \in \text{Top-}K(\mathcal{H}_j)$.
 * **Keystroke Savings Rate ($\text{KSR}\%$):** Physical key presses eliminated by prompt acceptance:
-  $$\text{KSR} = \frac{\sum_{w} (L_w - 1 - i_{\text{accepted}})}{\sum_{w} L_w} \times 100\% = \mathbf{60.58\%}$$
+
+$$
+\text{KSR} = \frac{\sum_{w} (L_w - 1 - i_{\text{accepted}})}{\sum_{w} L_w} \times 100\% = \mathbf{60.58\%}
+$$
+
 * **Incompleteness-Weighted Efficiency:** Credits early-word predictions ($i \ll L$):
-  $$\text{Efficiency} = \frac{1}{N_{\text{keystrokes}}} \sum_{w} \sum_{i=0}^{L-1} \mathbb{I}(\text{hit}) \cdot \left( \frac{L - i}{L} \right) \times 100\% = \mathbf{30.31\%}$$
+
+$$
+\text{Efficiency} = \frac{1}{N_{\text{keystrokes}}} \sum_{w} \sum_{i=0}^{L-1} \mathbb{I}(\text{hit}) \cdot \left( \frac{L - i}{L} \right) \times 100\% = \mathbf{30.31\%}
+$$
 
 ---
 
-### 4.2 Synthetic Stress Testing Suite
+### 4.2 Synthetic Benchmark Suite
 
 All synthetic benchmarks are reproducible via `examples/basic_tests.ipynb` under strict zero-leakage online evaluation:
 
@@ -198,7 +255,10 @@ Benchmarked on **AMD64 (Zen 3 Architecture, CPython 3.11.3, Windows 10)** using 
 | **Logits Scan (`predict_proba`)** | **$58,408$** | $17.12$ | **$12.45$** | $38.80$ | $49.60$ |
 
 #### Context Depth Horizon Scaling & Math Degradation Analysis
-$$\text{Decay Penalty} = \frac{\text{Throughput}_{\text{static}} - \text{Throughput}_{\text{decay}}}{\text{Throughput}_{\text{static}}} \times 100\%$$
+
+$$
+\text{Decay Penalty} = \frac{\text{Throughput}_{\text{static}} - \text{Throughput}_{\text{decay}}}{\text{Throughput}_{\text{static}}} \times 100\%
+$$
 
 | Context Depth ($n_{\max}$) | Static Throughput (kOps/s) | Decaying Throughput (kOps/s) | Decay Penalty ($\%$) | Static $P_{50}$ ($\mu s$) | Static $P_{99}$ ($\mu s$) | Total Trie Nodes |
 | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
