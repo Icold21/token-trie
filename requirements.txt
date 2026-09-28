@@ -1,7 +1,19 @@
-numpy
-matplotlib
-tqdm
-pypdf
-tiktoken
-jupyter
+# Build System & C-Extension Compilation
+Cython>=3.0.0
+setuptools>=61.0.0
+wheel>=0.40.0
+
+# Core Runtime
+tqdm>=4.60.0
+
+# Test Suite
 pytest>=7.0.0
+
+# Numerical Computing, Tokenization & Data Ingestion (examples/)
+numpy>=1.20.0
+matplotlib>=3.5.0
+tiktoken>=0.5.0
+pypdf>=3.0.0
+
+# Interactive Exploration
+jupyter>=1.0.0

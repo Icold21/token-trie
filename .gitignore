@@ -1,9 +1,30 @@
-# Byte-compiled / optimized / DLL files
+# ==============================================================================
+# Byte-compiled / Optimized Python Files
+# ==============================================================================
 __pycache__/
 *.py[cod]
 *$py.class
 
-# Distribution / packaging
+# ==============================================================================
+# C-Extensions & Cython Build Artifacts
+# ==============================================================================
+# Compiled dynamic libraries across platforms (Windows / Linux / macOS)
+*.pyd
+*.so
+*.dylib
+*.dll
+
+# Cython-generated C/C++ source files (source of truth is core.pyx)
+tokentrie/core.c
+tokentrie/core.cpp
+
+# Cython HTML annotation/profiling reports
+tokentrie/*.html
+cython_debug/
+
+# ==============================================================================
+# Distribution / Packaging
+# ==============================================================================
 bin/
 build/
 develop-eggs/
@@ -23,13 +44,27 @@ share/python-wheels/
 *.egg
 MANIFEST
 
-# Jupyter Notebook
-.ipynb_checkpoints
-
-# pytest
+# ==============================================================================
+# Testing, Code Quality & Type Checking
+# ==============================================================================
 .pytest_cache/
+.tox/
+.nox/
+.coverage
+.coverage.*
+htmlcov/
+.mypy_cache/
+.ruff_cache/
 
-# Environments
+# ==============================================================================
+# Jupyter Notebooks & Interactive Exploration
+# ==============================================================================
+.ipynb_checkpoints
+*-checkpoint.ipynb
+
+# ==============================================================================
+# Virtual Environments
+# ==============================================================================
 .env
 .venv
 env/
@@ -38,6 +73,30 @@ ENV/
 env.bak/
 venv.bak/
 
-# OS files
+# ==============================================================================
+# IDE & Editor Local Configurations
+# ==============================================================================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ==============================================================================
+# Operating System Artifacts
+# ==============================================================================
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
 Thumbs.db
+
+# ==============================================================================
+# Local Data Caches & Serialized Models
+# ==============================================================================
+english_corpus_cache.txt
+examples/english_corpus_cache.txt
+*.pkl
+*.pickle
