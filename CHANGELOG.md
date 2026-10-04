@@ -19,7 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * **Joint Depth Modulator ($\tilde{\beta}(c)$):** Formulated the composite depth multiplier $\tilde{\beta}(c) = \beta_{\text{raw}}(c) \cdot w_{\text{node}}(c)$, scaling logarithmic potentials as $\ell \cdot \tilde{\beta}(c) \cdot \ln |\mathcal{V}|$.
 * **Ablation Switch (`entropy_weighting`):** Added a boolean parameter to `TokenTrieModel.__init__()` and `reconfigure()` allowing instant toggle between empirical Bayes shrinkage (`True`) and the unweighted baseline (`False`) for scientific ablation studies.
 
-#### Streaming Markov Entropy Diagnostics ($O(1)$)
+#### Streaming Markov Entropy Diagnostics (`O(1)`)
 * **Real-Time Conditional Entropy Tracking:** Formulated closed-form incremental tracking for the empirical conditional Markov transition entropy across context orders $\ell$:
   $$\hat{H}(X_t \mid X_{t-\ell : t-1}) = \frac{\Sigma_{\text{node}}^{(\ell)} - \Sigma_{\text{trans}}^{(\ell)}}{N^{(\ell)}}$$
   Maintained in strict $O(1)$ time per ingested token using C-level difference updates $\Delta \Sigma = (n + 1)\ln(n + 1) - n\ln n$.
