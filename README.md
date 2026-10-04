@@ -124,10 +124,12 @@ Where:
 
 $$
 \mathcal{B}(\mathcal{V}) = \begin{cases} 
-\ln \max\left(2, |\mathcal{V}|\right), & \text{if } \texttt{alphabet\_autoscale=True} \\ 
+\ln \max\left(2, |\mathcal{V}|\right), & \text{if dynamic scaling is enabled} \\ 
 \ln 2 \approx 0.69315, & \text{otherwise} 
 \end{cases}
 $$
+
+*(configured via `alphabet_autoscale=True`).*
 
 * $\tilde{\beta}(c) \in [0, 1]$ is the **Joint Information-Theoretic Modulator**, defined as the product of information purity and empirical sample support:
 
