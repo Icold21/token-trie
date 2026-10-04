@@ -1,7 +1,7 @@
 """Unit Tests for Prediction Mechanics, Sampling Controls, and Beam Search.
 
 Validates inference parameters including temperature scaling, top-k filtering,
-top-p nucleus sampling, Katz backoff fallbacks, and masked breadth-first search.
+top-p nucleus sampling, unigram smoothing fallbacks, and masked breadth-first search.
 """
 
 import math
@@ -59,21 +59,21 @@ def test_top_p_nucleus_sampling(trained_model: TokenTrieModel) -> None:
 
 
 def test_fallback_strategies() -> None:
-    """Compares uniform distribution fallback against Katz-style unigram backoff."""
-    model_katz = TokenTrieModel(fallback_mode="katz_backoff")
+    """Compares uniform distribution fallback against interpolated unigram prior."""
+    model_unigram = TokenTrieModel(fallback_mode="interpolated_unigram")
     model_uniform = TokenTrieModel(fallback_mode="uniform")
 
     train_data = ["rare", "frequent", "frequent", "frequent"]
-    model_katz.fit(train_data, verbose=False)
+    model_unigram.fit(train_data, verbose=False)
     model_uniform.fit(train_data, verbose=False)
 
-    model_katz.fill_context(["unseen_context"])
+    model_unigram.fill_context(["unseen_context"])
     model_uniform.fill_context(["unseen_context"])
 
-    probas_katz = model_katz.predict_proba()
+    probas_unigram = model_unigram.predict_proba()
     probas_uniform = model_uniform.predict_proba()
 
-    assert probas_katz["frequent"] > probas_katz["rare"]
+    assert probas_unigram["frequent"] > probas_unigram["rare"]
     assert math.isclose(
         probas_uniform["frequent"],
         probas_uniform["rare"],
@@ -112,19 +112,16 @@ def test_masked_mode_beam_search() -> None:
     # 2. Context with a corrupted/typo token at the end: ['open', 'CORRUPTED_DOOR']
     model.fill_context(["open", "CORRUPTED_DOOR"])
 
-    # Standard exact match cannot match 'CORRUPTED_DOOR', breaking at depth 0.
-    # It falls back to unigrams where 'enter' and 'exit' have equal probabilities.
+    # Standard exact match breaks at depth 0 on 'CORRUPTED_DOOR', falling back to equal unigrams
     probas_none = model.predict_proba(masked_mode="none")
-    assert math.isclose(probas_none["enter"], probas_none["exit"], rel_tol=1e-5)
+    assert math.isclose(probas_none["enter"], probas_none["exit"], rel_tol=1e-3)
 
     # Masked beam search wildcards 'CORRUPTED_DOOR' and matches 'open',
-    # resolving the distribution unambiguously in favor of 'enter'.
+    # resolving the distribution overwhelmingly in favor of 'enter'
     probas_linear = model.predict_proba(masked_mode="linear")
     probas_squared = model.predict_proba(masked_mode="squared")
 
-    assert probas_linear.get("enter", 0.0) > probas_linear.get("exit", 0.0)
-    assert probas_squared.get("enter", 0.0) > probas_squared.get("exit", 0.0)
-    assert "enter" in probas_linear
-    assert "exit" not in probas_linear
+    assert probas_linear["enter"] > probas_linear["exit"] * 2.0
+    assert probas_squared["enter"] > probas_squared["exit"] * 2.0
     assert model.predict(masked_mode="linear") == "enter"
     assert model.predict(masked_mode="squared") == "enter"

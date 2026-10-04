@@ -1,7 +1,7 @@
 """Unit Tests for Low-Level Core Components of TokenTrie.
 
-Validates the invariant properties, boundary checks, sliding window operations,
-and serialization mechanisms of TokenBuffer and TokenTrieNode.
+Validates invariant properties, boundary checks, sliding window operations,
+and serialization mechanisms of TokenBuffer and TokenTrieNode using public APIs.
 """
 
 import pickle
@@ -20,6 +20,7 @@ def test_token_buffer_initialization() -> None:
     """
     buffer = TokenBuffer(maxlen=3)
     assert buffer.size == 0
+    assert buffer.maxlen == 3
     assert buffer.to_tuple() == ()
 
 
@@ -64,8 +65,8 @@ def test_token_buffer_extend_and_clear() -> None:
 def test_token_buffer_pickle_serialization() -> None:
     """Ensures TokenBuffer state can be pickled and unpickled losslessly.
 
-    Verifies that state dictionaries accurately restore internal deque,
-    size counters, and capacity bounds.
+    Verifies that state dictionaries accurately restore internal contents,
+    size counters, and capacity bounds via public accessors.
     """
     buffer = TokenBuffer(maxlen=4)
     buffer.extend(["tok_1", "tok_2", "tok_3"])
@@ -74,7 +75,7 @@ def test_token_buffer_pickle_serialization() -> None:
     restored: TokenBuffer = pickle.loads(serialized)
 
     assert restored.size == 3
-    assert restored._maxlen == 4
+    assert restored.maxlen == 4
     assert restored.to_tuple() == ("tok_1", "tok_2", "tok_3")
 
 

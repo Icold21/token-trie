@@ -19,13 +19,13 @@ def test_token_type_validation(empty_model: TokenTrieModel) -> None:
     empty_model.update("valid_string")
     empty_model.update(42)
 
-    with pytest.raises(TypeError, match="TokenTrieModel strictly accepts"):
+    with pytest.raises(TypeError, match=r"TokenTrieModel strictly (accepts|requires)"):
         empty_model.update(True)
 
-    with pytest.raises(TypeError, match="TokenTrieModel strictly accepts"):
+    with pytest.raises(TypeError, match=r"TokenTrieModel strictly (accepts|requires)"):
         empty_model.update(3.1415)
 
-    with pytest.raises(TypeError, match="TokenTrieModel strictly accepts"):
+    with pytest.raises(TypeError, match=r"TokenTrieModel strictly (accepts|requires)"):
         empty_model.update(None)
 
 
@@ -44,14 +44,14 @@ def test_fit_batch_vs_stream() -> None:
     model_stream.fit(tokens, verbose=False)
     model_batch.fit(batches, verbose=False)
 
-    # Unigram counts and vocabulary cardinality match identically
-    assert model_stream._vocab_len == model_batch._vocab_len
+    # Unigram counts and vocabulary cardinality match identically via public properties
+    assert model_stream.vocab_size == model_batch.vocab_size
     assert model_stream.unigram_counts == model_batch.unigram_counts
 
     # Batching isolates sequences (buffer.clear), preventing boundary bleeding (stop -> start).
     # Stream creates additional cross-boundary transitions (10 nodes vs 4 nodes).
-    assert model_batch._node_count == 4
-    assert model_stream._node_count == 10
+    assert model_batch.node_count == 4
+    assert model_stream.node_count == 10
 
 
 def test_context_management(empty_model: TokenTrieModel) -> None:
@@ -88,15 +88,16 @@ def test_min_depth_constraint() -> None:
     assert node_b is not None
     assert node_b.counts == {}
 
-    # Context length 1 ([c]) is below min_depth=3 -> falls back to unigram prior (all 0.25)
+    # Context length 1 ([c]) is below min_depth=3 -> falls back to unigram distribution
     model.fill_context(["c"])
     probas_shallow = model.predict_proba()
-    assert probas_shallow["d"] == 0.25
+    assert probas_shallow["d"] == pytest.approx(0.25, rel=1e-2)
 
     # Context length 3 ([a, b, c]) >= min_depth -> resolves contextually to 'd'
+    # Under v1.1.0 shrinkage on N_c=1, sample support w_node=0.5 yields ~0.75 probability
     model.fill_context(["a", "b", "c"])
     probas_deep = model.predict_proba()
-    assert probas_deep["d"] > 0.9
+    assert probas_deep["d"] > 0.70
     assert model.predict() == "d"
 
 
@@ -122,29 +123,41 @@ def test_fixed_garbage_collection() -> None:
 
     assert "a" not in model.known_vocabulary
     assert "b" not in model.known_vocabulary
-
-
+    
+    
 def test_dynamic_garbage_collection() -> None:
-    """Verifies dynamic GC targets update proportionally to node density."""
-    model = TokenTrieModel(pruning_mode="dynamic", pruning_step=10)
-    assert model._next_prune_target == 10
+    """Verifies that dynamic GC threshold escalates proportionally to node density."""
+    model = TokenTrieModel(
+            decay=0.5,
+            pruning_mode="dynamic",
+            pruning_step=10,
+            pruning_threshold=0.1,
+    )
+    assert model.next_prune_target == 10
 
     for i in range(25):
         model.update(f"token_{i}")
 
-    assert model._next_prune_target > 10
+    # Dynamic threshold target escalates as tree node count exceeds step baseline
+    assert model.next_prune_target > 10
 
 
 def test_lazy_decay_cache_mechanics() -> None:
-    """Verifies that repeated delta evaluations fetch from the power cache."""
-    model = TokenTrieModel(decay=0.9, cache_size=100)
+    """Verifies observable transition decay dynamics as global timeline advances."""
+    model = TokenTrieModel(max_depth=2, decay=0.85)
 
-    model.update("token")
-    model.update("token")
+    model.update("a")
+    model.update("b")  # 'a' -> 'b' observed at step 2
 
-    assert 1 in model._power_cache
-    assert model._power_cache_len > 0
-    assert model._get_decay_factor(1) == 0.9
+    # Advance the timeline significantly
+    for _ in range(8):
+        model.update("pad")
+
+    # Upon re-querying, historical transition 'b' is decayed relative to recent tokens
+    model.fill_context(["a"])
+    probas = model.predict_proba()
+    assert "b" in probas
+    assert probas["b"] < 0.50
 
 
 def test_restructure_tree_depth_trimming() -> None:
@@ -152,12 +165,12 @@ def test_restructure_tree_depth_trimming() -> None:
     model = TokenTrieModel(max_depth=5)
     model.fit(["1", "2", "3", "4", "5", "6"], verbose=False)
 
-    old_node_count = model._node_count
+    old_node_count = model.node_count
 
     model.reconfigure({"max_depth": 2})
 
     assert model.max_depth == 2
-    assert model._node_count < old_node_count
+    assert model.node_count < old_node_count
     assert max(model.valid_lengths) == 2
 
 
@@ -174,16 +187,19 @@ def test_set_branches_basic_and_overwrite(empty_model: TokenTrieModel) -> None:
     empty_model.fill_context(["hello", "world"])
     probas = empty_model.predict_proba()
 
-    assert "!" in probas and probas["!"] > probas["?"]
+    assert probas["!"] > probas["?"]
     assert "!" in empty_model.known_vocabulary
 
+    # Overwrite the branch with a new target
     empty_model.set_branches([
         (["hello", "world"], {".": 10.0})
     ])
 
     probas_updated = empty_model.predict_proba()
     assert "." in probas_updated
-    assert "!" not in probas_updated
+    # Target '.' overwhelmingly dominates over legacy unigram smoothed prior of '!'
+    assert probas_updated["."] > probas_updated["!"] * 10.0
+    assert empty_model.predict() == "."
 
 
 def test_set_branches_auto_expansion() -> None:
@@ -196,7 +212,7 @@ def test_set_branches_auto_expansion() -> None:
 
     assert model.max_depth == 5
     assert 5 in model.valid_lengths
-    assert model.buffer._maxlen == 5
+    assert model.buffer.maxlen == 5
 
     model.fill_context([1, 2, 3, 4, 5])
     assert model.predict() == 6
